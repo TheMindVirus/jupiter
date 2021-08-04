@@ -8,37 +8,88 @@
     <link rel="stylesheet" href="TemplateData/style.css">
     <script src="./Build/Output.loader.js"></script>
     <script>
-      window.onload = function()
-      {
-        var container = document.querySelector("#unity-container");
-        var canvas = document.querySelector("#unity-canvas");
-        var loadingBar = document.querySelector("#unity-loading-bar");
-        var progressBarFull = document.querySelector("#unity-progress-bar-full");
+var instance = null;
+var midi = null;
 
-        var buildUrl = "Build";
-        var loaderUrl = buildUrl + "/Output.loader.js";
-        var config = {
-          dataUrl: buildUrl + "/Output.data.unityweb",
-          frameworkUrl: buildUrl + "/Output.framework.js.unityweb",
-          codeUrl: buildUrl + "/Output.wasm.unityweb",
-          streamingAssetsUrl: "StreamingAssets",
-          companyName: "TheMindVirus",
-          productName: "Jupiter",
-          productVersion: "0.1",
-        };
+window.onload = function()
+{
+    var container = document.querySelector("#unity-container");
+    var canvas = document.querySelector("#unity-canvas");
+    var loadingBar = document.querySelector("#unity-loading-bar");
+    var progressBarFull = document.querySelector("#unity-progress-bar-full");
 
-        canvas.style.width = "100vw";
-        canvas.style.height = "100vh";
-        canvas.ondragstart = function(event) { event.preventDefault(); }
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/Output.loader.js";
+    var config =
+    {
+        dataUrl: buildUrl + "/Output.data.unityweb",
+        frameworkUrl: buildUrl + "/Output.framework.js.unityweb",
+        codeUrl: buildUrl + "/Output.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "TheMindVirus",
+        productName: "Jupiter",
+        productVersion: "0.1",
+    };
 
-        loadingBar.style.display = "block";
+    canvas.style.width = "100vw";
+    canvas.style.height = "100vh";
+    canvas.ondragstart = function(event) { event.preventDefault(); }
 
-        createUnityInstance(canvas, config, (progress) => {
-          progressBarFull.style.width = 100 * progress + "%";
-        }).then((unityInstance) => {
-          loadingBar.style.display = "none";
-        }).catch((message) => { alert(message); });
-      };
+    loadingBar.style.display = "block";
+
+    createUnityInstance(canvas, config, (progress) =>
+    {
+        progressBarFull.style.width = 100 * progress + "%";
+    }).then((unityInstance) =>
+    {
+        instance = unityInstance;
+        loadingBar.style.display = "none";
+    }).catch((message) => { alert(message); });
+
+    if (navigator.requestMIDIAccess) { navigator.requestMIDIAccess({sysex: true}).then(MIDIsetup, MIDIerror); }
+    else { console.log("[MIDI]: Error Initialising WebMIDI"); }
+};
+
+var MIDIsetup = function(handle)
+{
+    if (midi != null)
+    {
+        var inputs = midi.inputs.values();
+        for (var input = inputs.next(); input && (!input.done); input = inputs.next())
+        {
+            input.value.onmidimessage = null;
+        }
+    }
+    midi = handle;
+    midi.onstatechange = MIDIstate;
+    var inputs = midi.inputs.values();
+    for (var input = inputs.next(); input && (!input.done); input = inputs.next())
+    {
+        input.value.onmidimessage = MIDIevent;
+    }
+}
+
+var MIDIstate = function(state) { console.log("[MIDI]: " + state.port.name + " " + state.port.state); }
+var MIDIerror = function(error) { console.log("[MIDI]: " + error); }
+var MIDIevent = function(event) { console.log("[MIDI]: " + event.data); }
+
+var MIDI2ACK = function(id, msg, x, y)
+{
+    return (parseInt(y) << 24) + (parseInt(x) << 16) + (parseInt(msg) << 8) + parseInt(id);
+}
+
+var HEXFMT = function(value)
+{
+    return ((value < 0x10) ? "0" : "") + value.toString(16).toUpperCase();
+}
+
+var ReceiveMessage = function(id, msg, x, y)
+{
+    console.log("[" + HEXFMT(id) + ", " + HEXFMT(msg) + ", " + HEXFMT(x) + ", " + HEXFMT(y) + "]");
+    var outputs = midi.outputs.values();
+    for (var output = outputs.next(); output && (!output.done); output = outputs.next()) { output.value.send([msg, x, y]); }
+    instance.SendMessage("Jupiter8", "Acknowledge", MIDI2ACK(id, msg, x, y));
+}
     </script>
     <style>
       * { margin: auto; text-align: center; overflow: hidden; }
